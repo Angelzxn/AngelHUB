@@ -1883,7 +1883,6 @@ local function setupMainTab()
         Parent = page,
         Callback = function(val)
             selectedWorld = val
-            -- Update world parts
             if selectedWorld and worldPartDropdown then
                 local parts = MobFinder.GetWorldParts(selectedWorld)
                 worldPartDropdown.SetOptions(parts)
@@ -1892,17 +1891,21 @@ local function setupMainTab()
     })
     
     worldPartDropdown = UI.Dropdown({
-        Name = "WorldPartSelect",
-        Text = "World Part",
+        Name = "WorldPart",
+        Text = "Part",
         Options = {},
         Parent = page,
         Callback = function(val)
             selectedPart = val
+            if selectedWorld and selectedPart and mobSelectDropdown then
+                local mobs = MobFinder.GetUniqueMobNames(selectedWorld, selectedPart)
+                mobSelectDropdown.SetOptions(mobs)
+            end
         end,
     })
     
     mobSelectDropdown = UI.Dropdown({
-        Name = "MobSelect",
+        Name = "TargetMob",
         Text = "Target Mob",
         Options = {},
         Parent = page,
@@ -1912,52 +1915,50 @@ local function setupMainTab()
     })
     
     UI.Button({
-        Name = "RefreshMobsBtn",
+        Name = "RefreshMobs",
         Text = "Refresh Mobs List",
         Size = UDim2.new(1, -24, 0, 36),
         Parent = page,
         Callback = function()
             if selectedWorld and selectedPart then
                 local mobs = MobFinder.GetUniqueMobNames(selectedWorld, selectedPart)
-                if #mobs > 0 then
-                    mobSelectDropdown.SetOptions(mobs)
-                    NotificationSystem.Show("Refresh", "Found " .. #mobs .. " mobs", "success")
-                else
-                    NotificationSystem.Show("Refresh", "No mobs found in part " .. tostring(selectedPart), "error")
-                end
+                mobSelectDropdown.SetOptions(mobs)
+                NotificationSystem.Show("Auto Farm", "Mobs list updated!", "success")
             else
-                NotificationSystem.Show("Refresh", "Select World and Part first", "error")
+                NotificationSystem.Show("Warning", "Select World and Part first!", "warning")
             end
         end,
     })
     
-    -- Attack selected mob
     UI.Toggle({
         Name = "AutoFarm",
-        Text = "Auto Farm (Target Mob)",
-        Description = "Attacks the selected mob automatically",
+        Text = "Auto Farm Targeted",
+        Description = "Farms only the selected mob",
         Parent = page,
         Callback = function(enabled)
             HubState.ModuleStates.AutoFarm = enabled
             if enabled then
+                if not selectedMob then
+                    NotificationSystem.Show("Error", "Select a mob first!", "error")
+                    HubState.ModuleStates.AutoFarm = false
+                    return
+                end
+                
                 local loopId = Debounce.StartLoop("autofarm")
                 task.spawn(function()
                     while Debounce.IsActive("autofarm", loopId) and HubState.ModuleStates.AutoFarm do
-                        if PlayerHelper.IsAlive() and selectedWorld and selectedPart and selectedMob then
+                        if selectedWorld and selectedPart and selectedMob then
                             local nearest, dist = MobFinder.GetNearestByName(selectedWorld, selectedPart, selectedMob)
-                            if nearest and nearest.Model then
-                                -- Teleport near the mob
+                            if nearest then
                                 local mobRoot = nearest.Model:FindFirstChild("HumanoidRootPart")
                                 if mobRoot and dist > 15 then
                                     PlayerHelper.TeleportTo(mobRoot.CFrame * CFrame.new(0, 0, 5))
                                     task.wait(0.3)
                                 end
-                                
-                                -- Attack
                                 BridgeNet.Attack({})
                             end
                         end
-                        task.wait(0.15)
+                        task.wait(HubState.ModuleStates.AttackDelay or 0.15)
                     end
                 end)
                 NotificationSystem.Show("Auto Farm", "Farming " .. (selectedMob or "?"), "success")
@@ -1968,7 +1969,6 @@ local function setupMainTab()
         end,
     })
     
-    -- Attack Speed slider
     UI.Slider({
         Name = "AttackSpeed",
         Text = "Attack Delay",
@@ -1996,7 +1996,7 @@ local function setupGamemodesTab()
     
     local worldsForTP = {"Fruits Verse", "Trial"}
     
-    UI.Dropdown({
+    local worldDropdown = UI.Dropdown({
         Name = "TeleportWorld",
         Text = "Teleport to",
         Options = worldsForTP,
@@ -2009,8 +2009,7 @@ local function setupGamemodesTab()
         end,
     })
     
-    -- Sub world index
-    UI.Slider({
+    local subSlider = UI.Slider({
         Name = "SubWorldIndex",
         Text = "Sub-World Index",
         Min = 1,
@@ -2020,21 +2019,16 @@ local function setupGamemodesTab()
         Parent = page,
     })
     
-    -- Teleport button
     UI.Button({
         Name = "TeleportBtn",
         Text = "🚀 Teleportar",
         Size = UDim2.new(1, -24, 0, 36),
         Parent = page,
         Callback = function()
-            local worldDD = ContentPages["Gamemodes"]:FindFirstChild("TeleportWorld")
-            local subSlider = ContentPages["Gamemodes"]:FindFirstChild("SubWorldIndex")
-            
-            local world = worldDD and worldDD.GetValue() or "Fruits Verse"
-            local sub = subSlider and subSlider.GetValue() or 1
-            
+            local world = worldDropdown.GetValue() or "Fruits Verse"
+            local sub = subSlider.GetValue() or 1
             BridgeNet.Teleport(world, sub)
-            NotificationSystem.Show("Teleport", "Teleporting to " .. tostring(world) .. " #" .. tostring(sub), "success")
+            NotificationSystem.Show("Teleport", "Teleporting to " .. world .. " #" .. tostring(sub), "success")
         end,
     })
     
@@ -2043,7 +2037,7 @@ local function setupGamemodesTab()
     -- Trials section
     UI.SectionHeader({Text = "TRIALS", Color = Theme.Warning, Parent = page})
     
-    UI.Dropdown({
+    local trialDropdown = UI.Dropdown({
         Name = "TrialSelect",
         Text = "Trial",
         Options = {"Trial Easy", "Trial Medium", "Trial Hard", "Trial Insane", "Trial Nightmare"},
@@ -2056,20 +2050,14 @@ local function setupGamemodesTab()
         Size = UDim2.new(1, -24, 0, 36),
         Parent = page,
         Callback = function()
-            -- First teleport to lobby
             BridgeNet.Teleport("Trial", 1)
             task.wait(1)
-            
-            -- Then join the selected trial
-            local trialDD = ContentPages["Gamemodes"]:FindFirstChild("TrialSelect")
-            local trial = trialDD and trialDD.GetValue() or "Trial Easy"
-            
+            local trial = trialDropdown.GetValue() or "Trial Easy"
             BridgeNet.JoinGamemode(trial)
             NotificationSystem.Show("Trial", "Joining " .. trial, "success")
         end,
     })
     
-    -- Auto Trial
     UI.Toggle({
         Name = "AutoTrial",
         Text = "Auto Trial Loop",
@@ -2081,15 +2069,11 @@ local function setupGamemodesTab()
                 local loopId = Debounce.StartLoop("autotrial")
                 task.spawn(function()
                     while Debounce.IsActive("autotrial", loopId) and HubState.ModuleStates.AutoTrial do
-                        local trialDD = ContentPages["Gamemodes"]:FindFirstChild("TrialSelect")
-                        local trial = trialDD and trialDD.GetValue() or "Trial Easy"
-                        
+                        local trial = trialDropdown.GetValue() or "Trial Easy"
                         BridgeNet.Teleport("Trial", 1)
                         task.wait(2)
                         BridgeNet.JoinGamemode(trial)
-                        
-                        -- Wait for trial to finish (adjust as needed)
-                        task.wait(60)
+                        task.wait(HubState.ModuleStates.TrialWaitTime or 60)
                     end
                 end)
                 NotificationSystem.Show("Auto Trial", "Loop enabled!", "success")
@@ -2099,7 +2083,6 @@ local function setupGamemodesTab()
         end,
     })
     
-    -- Trial wait time slider
     UI.Slider({
         Name = "TrialWait",
         Text = "Time Between Trials",
@@ -2109,6 +2092,9 @@ local function setupGamemodesTab()
         Default = 60,
         Suffix = "s",
         Parent = page,
+        Callback = function(val)
+            HubState.ModuleStates.TrialWaitTime = val
+        end,
     })
     
     -- Position display
@@ -2131,7 +2117,6 @@ local function setupGamemodesTab()
         Parent = page,
     })
     
-    -- Update position display
     task.spawn(function()
         while ScreenGui and ScreenGui.Parent do
             local pos = PlayerHelper.GetPosition()
@@ -2158,6 +2143,13 @@ local function setupGachaTab()
         Parent = page,
     })
     
+    local gachaBannerDropdown = UI.Dropdown({
+        Name = "GachaBanner",
+        Text = "Banner",
+        Options = {"Haki"}, -- Add more as needed
+        Parent = page,
+    })
+    
     UI.Toggle({
         Name = "AutoGacha",
         Text = "Auto Gacha Roll",
@@ -2169,9 +2161,7 @@ local function setupGachaTab()
                 local loopId = Debounce.StartLoop("autogacha")
                 task.spawn(function()
                     while Debounce.IsActive("autogacha", loopId) and HubState.ModuleStates.AutoGacha do
-                        local bannerDD = ContentPages["Gacha"]:FindFirstChild("GachaBanner")
-                        local banner = bannerDD and bannerDD.GetValue() or "Haki"
-                        
+                        local banner = gachaBannerDropdown.GetValue() or "Haki"
                         BridgeNet.GachaRoll(banner)
                         task.wait(HubState.ModuleStates.GachaDelay or 1)
                     end
@@ -2202,14 +2192,14 @@ local function setupGachaTab()
     -- Stars/Pets section
     UI.SectionHeader({Text = "STARS / PETS", Color = Theme.Warning, Parent = page})
     
-    UI.Dropdown({
+    local bannerDropdown = UI.Dropdown({
         Name = "StarsBanner",
         Text = "Banner",
-        Options = {"Dressrosa"},  -- Add more as we discover them
+        Options = {"Dressrosa"},
         Parent = page,
     })
     
-    UI.Dropdown({
+    local qtyDropdown = UI.Dropdown({
         Name = "StarsQuantity",
         Text = "Quantity",
         Options = {"1", "4"},
@@ -2228,12 +2218,8 @@ local function setupGachaTab()
                 local loopId = Debounce.StartLoop("autostars")
                 task.spawn(function()
                     while Debounce.IsActive("autostars", loopId) and HubState.ModuleStates.AutoStars do
-                        local bannerDD = ContentPages["Gacha"]:FindFirstChild("StarsBanner")
-                        local qtyDD = ContentPages["Gacha"]:FindFirstChild("StarsQuantity")
-                        
-                        local banner = bannerDD and bannerDD.GetValue() or "Dressrosa"
-                        local qty = qtyDD and tonumber(qtyDD.GetValue()) or 1
-                        
+                        local banner = bannerDropdown.GetValue() or "Dressrosa"
+                        local qty = tonumber(qtyDropdown.GetValue()) or 1
                         BridgeNet.StarsOpen(banner, qty)
                         task.wait(HubState.ModuleStates.GachaDelay or 1)
                     end
@@ -2449,7 +2435,7 @@ local function setupRewardsTab()
     local trialTypes = {"Trial Easy", "Trial Medium", "Trial Hard", "Trial Insane", "Trial Nightmare"}
     local romanNums = {"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"}
     
-    UI.Dropdown({
+    local achievementTypeDropdown = UI.Dropdown({
         Name = "AchievementType",
         Text = "Achievement Type",
         Options = trialTypes,
@@ -2463,17 +2449,13 @@ local function setupRewardsTab()
         Size = UDim2.new(1, -24, 0, 36),
         Parent = page,
         Callback = function()
-            local typeDD = ContentPages["Rewards"]:FindFirstChild("AchievementType")
-            local trialType = typeDD and typeDD.GetValue() or "Trial Easy"
-            
+            local trialType = achievementTypeDropdown.GetValue() or "Trial Easy"
             NotificationSystem.Show("Achievements", "Collecting " .. trialType .. "...", "info")
-            
             for _, num in ipairs(romanNums) do
                 local name = trialType .. " " .. num
                 BridgeNet.ClaimAchievement(name)
                 task.wait(0.3)
             end
-            
             NotificationSystem.Show("Achievements", "Done!", "success")
         end,
     })
@@ -2700,14 +2682,21 @@ local function init()
     -- Build the UI
     buildHub()
     
-    -- Setup all tabs
-    setupMainTab()
-    setupGamemodesTab()
-    setupGachaTab()
-    setupPetsTab()
-    setupQuestsTab()
-    setupRewardsTab()
-    setupMiscTab()
+    -- Setup all tabs with safety pcall
+    local function safeSetup(name, func)
+        local success, err = pcall(func)
+        if not success then
+            warn("[Angel HUB] Failed to setup tab " .. name .. ": " .. tostring(err))
+        end
+    end
+    
+    safeSetup("Main", setupMainTab)
+    safeSetup("Gamemodes", setupGamemodesTab)
+    safeSetup("Gacha", setupGachaTab)
+    safeSetup("Pets", setupPetsTab)
+    safeSetup("Quests", setupQuestsTab)
+    safeSetup("Rewards", setupRewardsTab)
+    safeSetup("Misc", setupMiscTab)
     
     -- Setup anti-afk
     HubState.ModuleStates.AntiAFK = true
