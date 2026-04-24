@@ -668,14 +668,17 @@ function UI.Toggle(props)
         tween(container, 0.15, {BackgroundColor3 = Theme.BackgroundTertiary})
     end)
     
-    -- API
-    container.SetValue = function(_, val)
-        enabled = val
-        updateVisual(true)
-    end
-    container.GetValue = function() return enabled end
+    -- API (wrapper table, not Instance properties)
+    local api = {
+        Instance = container,
+        SetValue = function(val)
+            enabled = val
+            updateVisual(true)
+        end,
+        GetValue = function() return enabled end,
+    }
     
-    return container
+    return api
 end
 
 --- Creates a Slider (value bar)
@@ -829,17 +832,20 @@ function UI.Slider(props)
         updateValue(mouse.X)
     end)
     
-    -- API
-    container.SetValue = function(_, val)
-        currentValue = math.clamp(val, min, max)
-        local percent = (currentValue - min) / (max - min)
-        fill.Size = UDim2.new(percent, 0, 1, 0)
-        knob.Position = UDim2.new(percent, -8, 0.5, -8)
-        valueLabel.Text = tostring(currentValue) .. (props.Suffix or "")
-    end
-    container.GetValue = function() return currentValue end
+    -- API (wrapper table)
+    local api = {
+        Instance = container,
+        SetValue = function(val)
+            currentValue = math.clamp(val, min, max)
+            local percent = (currentValue - min) / (max - min)
+            fill.Size = UDim2.new(percent, 0, 1, 0)
+            knob.Position = UDim2.new(percent, -8, 0.5, -8)
+            valueLabel.Text = tostring(currentValue) .. (props.Suffix or "")
+        end,
+        GetValue = function() return currentValue end,
+    }
     
-    return container
+    return api
 end
 
 --- Creates a Dropdown
@@ -1059,21 +1065,24 @@ function UI.Dropdown(props)
         tween(container, 0.15, {BackgroundColor3 = Theme.BackgroundTertiary})
     end)
     
-    -- API
-    container.SetOptions = function(_, newOptions)
-        options = newOptions
-        if multi then selected = {} else selected = nil end
-        selectedLabel.Text = getSelectedText()
-        refreshOptions()
-    end
-    container.GetValue = function() return multi and selected or selected end
-    container.SetValue = function(_, val)
-        selected = val
-        selectedLabel.Text = getSelectedText()
-        refreshOptions()
-    end
+    -- API (wrapper table)
+    local api = {
+        Instance = container,
+        SetOptions = function(newOptions)
+            options = newOptions
+            if multi then selected = {} else selected = nil end
+            selectedLabel.Text = getSelectedText()
+            refreshOptions()
+        end,
+        GetValue = function() return multi and selected or selected end,
+        SetValue = function(val)
+            selected = val
+            selectedLabel.Text = getSelectedText()
+            refreshOptions()
+        end,
+    }
     
-    return container
+    return api
 end
 
 --- Toast Notification System
@@ -1739,6 +1748,8 @@ local function setupMainTab()
     local selectedWorld = nil
     local selectedSubWorld = nil
     
+    local subWorldDropdown -- forward declaration
+    
     local worldDropdown = UI.Dropdown({
         Name = "WorldSelect",
         Text = "World",
@@ -1747,14 +1758,14 @@ local function setupMainTab()
         Callback = function(val)
             selectedWorld = val
             -- Update sub-worlds
-            if selectedWorld then
+            if selectedWorld and subWorldDropdown then
                 local subs = MobFinder.GetSubWorlds(selectedWorld)
-                subWorldDropdown:SetOptions(subs)
+                subWorldDropdown.SetOptions(subs)
             end
         end,
     })
     
-    local subWorldDropdown = UI.Dropdown({
+    subWorldDropdown = UI.Dropdown({
         Name = "SubWorldSelect",
         Text = "Sub-World",
         Options = {},
