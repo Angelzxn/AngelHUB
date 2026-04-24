@@ -57,7 +57,40 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local BridgeNet = {}
 
 -- Main remote cache
-local dataRemoteEvent = ReplicatedStorage:WaitForChild("BridgeNet"):WaitForChild("dataRemoteEvent")
+local dataRemoteEvent
+
+local function resolveDataRemoteEvent(timeout)
+    local bridgeNetFolder = ReplicatedStorage:FindFirstChild("BridgeNet")
+    if not bridgeNetFolder then
+        bridgeNetFolder = ReplicatedStorage:WaitForChild("BridgeNet", timeout or 10)
+    end
+    
+    if not bridgeNetFolder then
+        warn("[Angel HUB] BridgeNet nao encontrado em ReplicatedStorage")
+        return nil
+    end
+    
+    local remote = bridgeNetFolder:FindFirstChild("dataRemoteEvent")
+    if not remote then
+        remote = bridgeNetFolder:WaitForChild("dataRemoteEvent", timeout or 10)
+    end
+    
+    if not remote then
+        warn("[Angel HUB] dataRemoteEvent nao encontrado em BridgeNet")
+        return nil
+    end
+    
+    return remote
+end
+
+local function getDataRemoteEvent()
+    if dataRemoteEvent and dataRemoteEvent.Parent then
+        return dataRemoteEvent
+    end
+    
+    dataRemoteEvent = resolveDataRemoteEvent(3)
+    return dataRemoteEvent
+end
 
 --- Fires a command via BridgeNet
 --- @param category string "General" or "Player"
@@ -79,9 +112,13 @@ function BridgeNet.Fire(category, system, action, ...)
     params.n = n
     
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     
     local ok, err = pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
     
     return ok, err
@@ -92,9 +129,14 @@ function BridgeNet.Teleport(worldName, subIndex)
     subIndex = subIndex or 1
     local params = {"Player", "Teleport", "Teleport", worldName, subIndex, n = 6}
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
+    return true
 end
 
 --- Attack with specific targets (mob UUIDs)
@@ -102,9 +144,14 @@ function BridgeNet.Attack(targetTable)
     targetTable = targetTable or {}
     local params = {"General", "Attack", "Click", targetTable, n = 4}
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
+    return true
 end
 
 --- Collect currency drop
@@ -116,9 +163,14 @@ end
 function BridgeNet.GachaRoll(bannerName)
     local params = {"General", "Gacha", "Roll", bannerName, {}, n = 5}
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
+    return true
 end
 
 --- Stars/Pet Open
@@ -126,9 +178,14 @@ function BridgeNet.StarsOpen(bannerName, quantity)
     quantity = quantity or 1
     local params = {"General", "Stars", "Open", bannerName, quantity, n = 5}
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
+    return true
 end
 
 --- Claim Achievement
@@ -150,9 +207,14 @@ end
 function BridgeNet.VerifyFollow()
     local params = {"General", "FollowRewards", "Verify", n = 3}
     local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if not remote then
+        return false, "BridgeNet dataRemoteEvent indisponivel"
+    end
     pcall(function()
-        dataRemoteEvent:FireServer(unpack(args))
+        remote:FireServer(unpack(args))
     end)
+    return true
 end
 
 -- ══════════════════════════════════════
