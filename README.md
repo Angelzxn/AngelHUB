@@ -7,7 +7,7 @@ Premium automation hub for **World Fighters** (Roblox).
 Paste this in your executor:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/AngelDev-EU/AngelHUB/main/AngelHUB.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelzxn/AngelHUB/main/AngelHUB.lua"))()
 ```
 
 ## Features
