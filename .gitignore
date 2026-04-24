@@ -1,0 +1,10 @@
+# Dev files
+pegando_info_game/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+*.code-workspace
