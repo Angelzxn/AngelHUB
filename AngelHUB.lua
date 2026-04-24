@@ -66,7 +66,7 @@ local function resolveDataRemoteEvent(timeout)
     end
     
     if not bridgeNetFolder then
-        warn("[Angel HUB] BridgeNet nao encontrado em ReplicatedStorage")
+        warn("[Angel HUB] BridgeNet not found in ReplicatedStorage")
         return nil
     end
     
@@ -76,7 +76,7 @@ local function resolveDataRemoteEvent(timeout)
     end
     
     if not remote then
-        warn("[Angel HUB] dataRemoteEvent nao encontrado em BridgeNet")
+        warn("[Angel HUB] dataRemoteEvent not found in BridgeNet")
         return nil
     end
     
@@ -114,7 +114,7 @@ function BridgeNet.Fire(category, system, action, ...)
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     
     local ok, err = pcall(function()
@@ -131,7 +131,7 @@ function BridgeNet.Teleport(worldName, subIndex)
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     pcall(function()
         remote:FireServer(unpack(args))
@@ -146,7 +146,7 @@ function BridgeNet.Attack(targetTable)
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     pcall(function()
         remote:FireServer(unpack(args))
@@ -165,7 +165,7 @@ function BridgeNet.GachaRoll(bannerName)
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     pcall(function()
         remote:FireServer(unpack(args))
@@ -180,7 +180,7 @@ function BridgeNet.StarsOpen(bannerName, quantity)
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     pcall(function()
         remote:FireServer(unpack(args))
@@ -209,7 +209,7 @@ function BridgeNet.VerifyFollow()
     local args = {{params, "\002"}}
     local remote = getDataRemoteEvent()
     if not remote then
-        return false, "BridgeNet dataRemoteEvent indisponivel"
+        return false, "BridgeNet dataRemoteEvent unavailable"
     end
     pcall(function()
         remote:FireServer(unpack(args))
