@@ -374,17 +374,70 @@ function MobFinder.GetMobs(worldName, partName)
     return mobs
 end
 
---- Finds the nearest mob
-function MobFinder.GetNearest(worldName, subWorldName)
-    local mobs = MobFinder.GetMobs(worldName, subWorldName)
-    local myPos = PlayerHelper.GetPosition()
+--- Get all unique mob names from all worlds and parts
+function MobFinder.GetAllUniqueMobNames()
+    local enemies = MobFinder.GetEnemiesFolder()
+    if not enemies then return {} end
     
+    local uniqueNames = {}
+    local nameSet = {}
+    
+    for _, world in ipairs(enemies:GetChildren()) do
+        for _, part in ipairs(world:GetChildren()) do
+            for _, mob in ipairs(part:GetChildren()) do
+                if mob:IsA("Model") and mob:FindFirstChild("Humanoid") then
+                    if not nameSet[mob.Name] then
+                        nameSet[mob.Name] = true
+                        table.insert(uniqueNames, mob.Name)
+                    end
+                end
+            end
+        end
+    end
+    
+    table.sort(uniqueNames)
+    return uniqueNames
+end
+
+--- Get the nearest mob by name (across all worlds/parts)
+function MobFinder.GetNearestByName(targetNames)
+    local enemies = MobFinder.GetEnemiesFolder()
+    if not enemies then return nil, math.huge end
+    
+    local targetSet = {}
+    if type(targetNames) == "table" then
+        for _, name in ipairs(targetNames) do
+            targetSet[name] = true
+        end
+    else
+        targetSet[targetNames] = true
+    end
+    
+    local myPos = PlayerHelper.GetPosition()
     local nearest, nearestDist = nil, math.huge
-    for _, mob in ipairs(mobs) do
-        local dist = (myPos - mob.Position).Magnitude
-        if dist < nearestDist then
-            nearestDist = dist
-            nearest = mob
+    
+    for _, world in ipairs(enemies:GetChildren()) do
+        for _, part in ipairs(world:GetChildren()) do
+            for _, mob in ipairs(part:GetChildren()) do
+                if targetSet[mob.Name] then
+                    local humanoid = mob:FindFirstChild("Humanoid")
+                    if humanoid and humanoid.Health > 0 then
+                        local pos = mob:FindFirstChild("HumanoidRootPart") and mob.HumanoidRootPart.Position or mob:GetPivot().Position
+                        local dist = (myPos - pos).Magnitude
+                        if dist < nearestDist then
+                            nearestDist = dist
+                            nearest = {
+                                Model = mob,
+                                Name = mob.Name,
+                                Health = humanoid.Health,
+                                MaxHealth = humanoid.MaxHealth,
+                                Position = pos,
+                                UUID = mob:GetAttribute("UUID") or (mob:FindFirstChild("UUID") and mob.UUID.Value) or nil
+                            }
+                        end
+                    end
+                end
+            end
         end
     end
     
@@ -1867,51 +1920,13 @@ local function setupMainTab()
     UI.Separator({Parent = page})
     UI.SectionHeader({Text = "AUTO FARM", Color = Theme.Success, Parent = page})
     
-    -- World Selection
-    local worlds = MobFinder.GetWorlds()
-    local selectedWorld = nil
-    local selectedPart = nil
-    local selectedMob = nil
-    
-    local worldPartDropdown -- forward declaration
-    local mobSelectDropdown -- forward declaration
-    
-    local worldDropdown = UI.Dropdown({
-        Name = "WorldSelect",
-        Text = "World",
-        Options = worlds,
-        Parent = page,
-        Callback = function(val)
-            selectedWorld = val
-            if selectedWorld and worldPartDropdown then
-                local parts = MobFinder.GetWorldParts(selectedWorld)
-                worldPartDropdown.SetOptions(parts)
-            end
-        end,
-    })
-    
-    worldPartDropdown = UI.Dropdown({
-        Name = "WorldPart",
-        Text = "Part",
-        Options = {},
-        Parent = page,
-        Callback = function(val)
-            selectedPart = val
-            if selectedWorld and selectedPart and mobSelectDropdown then
-                local mobs = MobFinder.GetUniqueMobNames(selectedWorld, selectedPart)
-                mobSelectDropdown.SetOptions(mobs)
-            end
-        end,
-    })
-    
-    mobSelectDropdown = UI.Dropdown({
+    -- Target Mobs Selection
+    local mobSelectDropdown = UI.Dropdown({
         Name = "TargetMob",
-        Text = "Target Mob",
-        Options = {},
+        Text = "Target Mobs (multi)...",
+        Options = MobFinder.GetAllUniqueMobNames(),
+        Multi = true,
         Parent = page,
-        Callback = function(val)
-            selectedMob = val
-        end,
     })
     
     UI.Button({
@@ -1920,13 +1935,9 @@ local function setupMainTab()
         Size = UDim2.new(1, -24, 0, 36),
         Parent = page,
         Callback = function()
-            if selectedWorld and selectedPart then
-                local mobs = MobFinder.GetUniqueMobNames(selectedWorld, selectedPart)
-                mobSelectDropdown.SetOptions(mobs)
-                NotificationSystem.Show("Auto Farm", "Mobs list updated!", "success")
-            else
-                NotificationSystem.Show("Warning", "Select World and Part first!", "warning")
-            end
+            local mobs = MobFinder.GetAllUniqueMobNames()
+            mobSelectDropdown.SetOptions(mobs)
+            NotificationSystem.Show("Auto Farm", "Mobs list updated!", "success")
         end,
     })
     
@@ -1938,8 +1949,9 @@ local function setupMainTab()
         Callback = function(enabled)
             HubState.ModuleStates.AutoFarm = enabled
             if enabled then
-                if not selectedMob then
-                    NotificationSystem.Show("Error", "Select a mob first!", "error")
+                local selectedMobs = mobSelectDropdown.GetValue()
+                if not selectedMobs or #selectedMobs == 0 then
+                    NotificationSystem.Show("Error", "Select at least one mob!", "error")
                     HubState.ModuleStates.AutoFarm = false
                     return
                 end
@@ -1947,8 +1959,9 @@ local function setupMainTab()
                 local loopId = Debounce.StartLoop("autofarm")
                 task.spawn(function()
                     while Debounce.IsActive("autofarm", loopId) and HubState.ModuleStates.AutoFarm do
-                        if selectedWorld and selectedPart and selectedMob then
-                            local nearest, dist = MobFinder.GetNearestByName(selectedWorld, selectedPart, selectedMob)
+                        local currentSelected = mobSelectDropdown.GetValue()
+                        if currentSelected and #currentSelected > 0 then
+                            local nearest, dist = MobFinder.GetNearestByName(currentSelected)
                             if nearest then
                                 local mobRoot = nearest.Model:FindFirstChild("HumanoidRootPart")
                                 if mobRoot and dist > 15 then
@@ -1961,7 +1974,7 @@ local function setupMainTab()
                         task.wait(HubState.ModuleStates.AttackDelay or 0.15)
                     end
                 end)
-                NotificationSystem.Show("Auto Farm", "Farming " .. (selectedMob or "?"), "success")
+                NotificationSystem.Show("Auto Farm", "Farming targeted mobs", "success")
             else
                 Debounce.StopLoop("autofarm")
                 NotificationSystem.Show("Auto Farm", "Disabled", "info")
