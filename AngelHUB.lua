@@ -315,23 +315,23 @@ function MobFinder.GetWorlds()
     return worlds
 end
 
---- Lists sub-worlds of a world
-function MobFinder.GetSubWorlds(worldName)
+--- Lists parts of a world
+function MobFinder.GetWorldParts(worldName)
     local enemies = MobFinder.GetEnemiesFolder()
     if not enemies then return {} end
     
     local world = enemies:FindFirstChild(worldName)
     if not world then return {} end
     
-    local subs = {}
+    local parts = {}
     for _, child in ipairs(world:GetChildren()) do
-        table.insert(subs, child.Name)
+        table.insert(parts, child.Name)
     end
-    return subs
+    return parts
 end
 
---- Finds all alive mobs in a world/subworld
-function MobFinder.GetMobs(worldName, subWorldName)
+--- Finds all alive mobs in a world/part
+function MobFinder.GetMobs(worldName, partName)
     local enemies = MobFinder.GetEnemiesFolder()
     if not enemies then return {} end
     
@@ -340,8 +340,8 @@ function MobFinder.GetMobs(worldName, subWorldName)
         path = path:FindFirstChild(worldName)
         if not path then return {} end
     end
-    if subWorldName then
-        path = path:FindFirstChild(subWorldName)
+    if partName then
+        path = path:FindFirstChild(partName)
         if not path then return {} end
     end
     
@@ -1267,12 +1267,12 @@ local HubState = {
 
 -- Tab definitions
 local Tabs = {
-    {Name = "Main", Icon = "⚔️", Color = Color3.fromRGB(237, 66, 69)},
-    {Name = "Gamemodes", Icon = "🏆", Color = Color3.fromRGB(88, 101, 242)},
-    {Name = "Gacha", Icon = "🎰", Color = Color3.fromRGB(165, 108, 255)},
-    {Name = "Quests", Icon = "📜", Color = Color3.fromRGB(254, 231, 92)},
-    {Name = "Rewards", Icon = "🎁", Color = Color3.fromRGB(87, 242, 135)},
-    {Name = "Misc", Icon = "⚙️", Color = Color3.fromRGB(148, 155, 175)},
+    {Name = "Main", Icon = "", Color = Color3.fromRGB(237, 66, 69)},
+    {Name = "Gamemodes", Icon = "", Color = Color3.fromRGB(88, 101, 242)},
+    {Name = "Gacha", Icon = "", Color = Color3.fromRGB(165, 108, 255)},
+    {Name = "Quests", Icon = "", Color = Color3.fromRGB(254, 231, 92)},
+    {Name = "Rewards", Icon = "", Color = Color3.fromRGB(87, 242, 135)},
+    {Name = "Misc", Icon = "", Color = Color3.fromRGB(148, 155, 175)},
 }
 
 local ScreenGui, MainFrame, SideBar, ContentArea, ContentPages
@@ -1575,8 +1575,8 @@ local function buildHub()
         
         -- Label
         local tabLabel = Instance.new("TextLabel")
-        tabLabel.Size = UDim2.new(1, -48, 1, 0)
-        tabLabel.Position = UDim2.new(0, 40, 0, 0)
+        tabLabel.Size = UDim2.new(1, -24, 1, 0)
+        tabLabel.Position = UDim2.new(0, 16, 0, 0)
         tabLabel.BackgroundTransparency = 1
         tabLabel.Text = tabDef.Name
         tabLabel.TextColor3 = Theme.TextSecondary
@@ -1808,9 +1808,11 @@ local function setupMainTab()
     -- World Selection
     local worlds = MobFinder.GetWorlds()
     local selectedWorld = nil
-    local selectedSubWorld = nil
+    local selectedPart = nil
+    local selectedMob = nil
     
-    local subWorldDropdown -- forward declaration
+    local worldPartDropdown -- forward declaration
+    local mobSelectDropdown -- forward declaration
     
     local worldDropdown = UI.Dropdown({
         Name = "WorldSelect",
@@ -1819,29 +1821,59 @@ local function setupMainTab()
         Parent = page,
         Callback = function(val)
             selectedWorld = val
-            -- Update sub-worlds
-            if selectedWorld and subWorldDropdown then
-                local subs = MobFinder.GetSubWorlds(selectedWorld)
-                subWorldDropdown.SetOptions(subs)
+            -- Update world parts
+            if selectedWorld and worldPartDropdown then
+                local parts = MobFinder.GetWorldParts(selectedWorld)
+                worldPartDropdown.SetOptions(parts)
             end
         end,
     })
     
-    subWorldDropdown = UI.Dropdown({
-        Name = "SubWorldSelect",
-        Text = "Sub-World",
+    worldPartDropdown = UI.Dropdown({
+        Name = "WorldPartSelect",
+        Text = "World Part",
         Options = {},
         Parent = page,
         Callback = function(val)
-            selectedSubWorld = val
+            selectedPart = val
         end,
     })
     
-    -- Attack nearest mob
+    mobSelectDropdown = UI.Dropdown({
+        Name = "MobSelect",
+        Text = "Target Mob",
+        Options = {},
+        Parent = page,
+        Callback = function(val)
+            selectedMob = val
+        end,
+    })
+    
+    UI.Button({
+        Name = "RefreshMobsBtn",
+        Text = "Refresh Mobs List",
+        Size = UDim2.new(1, -24, 0, 36),
+        Parent = page,
+        Callback = function()
+            if selectedWorld and selectedPart then
+                local mobs = MobFinder.GetUniqueMobNames(selectedWorld, selectedPart)
+                if #mobs > 0 then
+                    mobSelectDropdown.SetOptions(mobs)
+                    NotificationSystem.Show("Refresh", "Found " .. #mobs .. " mobs", "success")
+                else
+                    NotificationSystem.Show("Refresh", "No mobs found in part " .. tostring(selectedPart), "error")
+                end
+            else
+                NotificationSystem.Show("Refresh", "Select World and Part first", "error")
+            end
+        end,
+    })
+    
+    -- Attack selected mob
     UI.Toggle({
         Name = "AutoFarm",
-        Text = "⚔️ Auto Farm (Attack Nearest)",
-        Description = "Attacks the nearest mob automatically",
+        Text = "Auto Farm (Target Mob)",
+        Description = "Attacks the selected mob automatically",
         Parent = page,
         Callback = function(enabled)
             HubState.ModuleStates.AutoFarm = enabled
@@ -1849,8 +1881,8 @@ local function setupMainTab()
                 local loopId = Debounce.StartLoop("autofarm")
                 task.spawn(function()
                     while Debounce.IsActive("autofarm", loopId) and HubState.ModuleStates.AutoFarm do
-                        if PlayerHelper.IsAlive() and selectedWorld then
-                            local nearest, dist = MobFinder.GetNearest(selectedWorld, selectedSubWorld)
+                        if PlayerHelper.IsAlive() and selectedWorld and selectedPart and selectedMob then
+                            local nearest, dist = MobFinder.GetNearestByName(selectedWorld, selectedPart, selectedMob)
                             if nearest and nearest.Model then
                                 -- Teleport near the mob
                                 local mobRoot = nearest.Model:FindFirstChild("HumanoidRootPart")
@@ -1866,7 +1898,7 @@ local function setupMainTab()
                         task.wait(0.15)
                     end
                 end)
-                NotificationSystem.Show("Auto Farm", "Farming at " .. (selectedWorld or "?"), "success")
+                NotificationSystem.Show("Auto Farm", "Farming " .. (selectedMob or "?"), "success")
             else
                 Debounce.StopLoop("autofarm")
                 NotificationSystem.Show("Auto Farm", "Disabled", "info")
