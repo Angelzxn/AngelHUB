@@ -198,6 +198,16 @@ function BridgeNet.ClaimTimeReward(rewardIndex)
     BridgeNet.Fire("General", "TimeRewards", "Claim", rewardIndex)
 end
 
+--- Rename Unit (Pet)
+function BridgeNet.RenameUnit(unitUUID, newName)
+    local params = {"General", "Units", "Rename", unitUUID, newName, n = 5}
+    local args = {{params, "\002"}}
+    local remote = getDataRemoteEvent()
+    if remote then
+        remote:FireServer(unpack(args))
+    end
+end
+
 --- Join Gamemode
 function BridgeNet.JoinGamemode(modeName)
     BridgeNet.Fire("General", "Gamemodes", "Join", modeName)
@@ -379,6 +389,57 @@ function MobFinder.GetNearest(worldName, subWorldName)
     end
     
     return nearest, nearestDist
+end
+
+-- ══════════════════════════════════════
+-- UNIT SERVICE — Handles Pets/Units
+-- ══════════════════════════════════════
+local UnitService = {}
+
+function UnitService.GetUnitsFolder()
+    local player = game.Players.LocalPlayer
+    local replicatedStorage = game:GetService("ReplicatedStorage")
+    
+    local playerData = replicatedStorage:FindFirstChild("PlayerData")
+    if playerData then
+        local myData = playerData:FindFirstChild(tostring(player.UserId))
+        if myData then
+            local inv = myData:FindFirstChild("Inventory")
+            if inv then
+                return inv:FindFirstChild("Units")
+            end
+        end
+    end
+    return nil
+end
+
+function UnitService.GetUnits()
+    local folder = UnitService.GetUnitsFolder()
+    if not folder then return {} end
+    
+    local units = {}
+    for _, unit in ipairs(folder:GetChildren()) do
+        local name = unit.Name
+        local uuid = unit:GetAttribute("UUID") or unit.Name
+        local nick = unit:GetAttribute("Nickname") or name
+        table.insert(units, {
+            Instance = unit,
+            Name = name,
+            UUID = uuid,
+            Nickname = nick,
+            DisplayName = nick .. " (" .. name .. ")"
+        })
+    end
+    return units
+end
+
+function UnitService.GetUnitStats(unitInstance)
+    if not unitInstance then return {} end
+    return {
+        Power = unitInstance:GetAttribute("Power") or 0,
+        Crystal = unitInstance:GetAttribute("Crystal") or 0,
+        Damage = unitInstance:GetAttribute("Damage") or 0,
+    }
 end
 
 -- ══════════════════════════════════════
@@ -1270,6 +1331,7 @@ local Tabs = {
     {Name = "Main", Icon = "", Color = Color3.fromRGB(237, 66, 69)},
     {Name = "Gamemodes", Icon = "", Color = Color3.fromRGB(88, 101, 242)},
     {Name = "Gacha", Icon = "", Color = Color3.fromRGB(165, 108, 255)},
+    {Name = "Pets", Icon = "", Color = Color3.fromRGB(255, 127, 80)},
     {Name = "Quests", Icon = "", Color = Color3.fromRGB(254, 231, 92)},
     {Name = "Rewards", Icon = "", Color = Color3.fromRGB(87, 242, 135)},
     {Name = "Misc", Icon = "", Color = Color3.fromRGB(148, 155, 175)},
@@ -2187,6 +2249,126 @@ end
 -- ══════════════════════════════════════
 -- MODULE: QUESTS
 -- ══════════════════════════════════════
+-- ══════════════════════════════════════
+-- MODULE: PETS (UNITS)
+-- ══════════════════════════════════════
+local function setupPetsTab()
+    local page = ContentPages["Pets"]
+    if not page then return end
+    
+    UI.SectionHeader({Text = "PET BUFF ROLLER (RENAME)", Color = Theme.Accent, Parent = page})
+    
+    local selectedUnit = nil
+    local targetBuff = "Power"
+    local targetValue = 1.75
+    
+    local unitDropdown -- forward declaration
+    
+    UI.Button({
+        Name = "RefreshUnitsBtn",
+        Text = "Refresh Pet List",
+        Size = UDim2.new(1, -24, 0, 36),
+        Parent = page,
+        Callback = function()
+            local units = UnitService.GetUnits()
+            local options = {}
+            for _, u in ipairs(units) do
+                table.insert(options, u.DisplayName)
+            end
+            if unitDropdown then
+                unitDropdown.SetOptions(options)
+                NotificationSystem.Show("Pets", "Found " .. #options .. " pets", "success")
+            end
+        end,
+    })
+    
+    unitDropdown = UI.Dropdown({
+        Name = "SelectUnit",
+        Text = "Select Pet",
+        Options = {},
+        Parent = page,
+        Callback = function(val)
+            local units = UnitService.GetUnits()
+            for _, u in ipairs(units) do
+                if u.DisplayName == val then
+                    selectedUnit = u
+                    break
+                end
+            end
+        end,
+    })
+    
+    UI.Dropdown({
+        Name = "SelectBuff",
+        Text = "Target Buff",
+        Options = {"Power", "Crystal", "Damage"},
+        Parent = page,
+        Callback = function(val)
+            targetBuff = val
+            if val == "Power" then
+                targetValue = 1.75
+            else
+                targetValue = 0.75
+            end
+        end,
+    })
+    
+    UI.Slider({
+        Name = "TargetValue",
+        Text = "Target Value",
+        Min = 0.1,
+        Max = 2,
+        Step = 0.05,
+        Default = 1.75,
+        Parent = page,
+        Callback = function(val)
+            targetValue = val
+        end,
+    })
+    
+    UI.Toggle({
+        Name = "AutoRoll",
+        Text = "Auto Roll Buffs (Rename)",
+        Description = "Automatically renames pet until target buff is reached",
+        Parent = page,
+        Callback = function(enabled)
+            HubState.ModuleStates.AutoRoll = enabled
+            if enabled then
+                if not selectedUnit then
+                    NotificationSystem.Show("Error", "Please select a pet first!", "error")
+                    HubState.ModuleStates.AutoRoll = false
+                    return
+                end
+                
+                local loopId = Debounce.StartLoop("autoroll")
+                task.spawn(function()
+                    local alt = false
+                    while Debounce.IsActive("autoroll", loopId) and HubState.ModuleStates.AutoRoll do
+                        local stats = UnitService.GetUnitStats(selectedUnit.Instance)
+                        local current = stats[targetBuff] or 0
+                        
+                        if current >= targetValue then
+                            NotificationSystem.Show("Success", "Target reached: " .. tostring(current), "success")
+                            HubState.ModuleStates.AutoRoll = false
+                            break
+                        end
+                        
+                        -- Rename logic to avoid repetition (3-20 chars)
+                        local newName = alt and "...................." or "..."
+                        BridgeNet.RenameUnit(selectedUnit.UUID, newName)
+                        
+                        alt = not alt
+                        task.wait(0.5) -- Adjust delay if needed
+                    end
+                end)
+                NotificationSystem.Show("Auto Roll", "Started rolling for " .. targetBuff, "success")
+            else
+                Debounce.StopLoop("autoroll")
+            end
+        end,
+    })
+end
+
 local function setupQuestsTab()
     local page = ContentPages["Quests"]
     if not page then return end
@@ -2522,6 +2704,7 @@ local function init()
     setupMainTab()
     setupGamemodesTab()
     setupGachaTab()
+    setupPetsTab()
     setupQuestsTab()
     setupRewardsTab()
     setupMiscTab()
